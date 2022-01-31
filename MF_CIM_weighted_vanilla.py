@@ -3,7 +3,6 @@ import numpy as np
 from scipy.integrate import odeint
 import matplotlib.pyplot as plt
 import torch
-import networkx as nx
 import copy
 import math
 import random
