@@ -21,91 +21,7 @@ w_dist1 = tdist.Normal(0, 1.0)
 w_dist2 = tdist.Normal(0, 1.0)
 
 
-def compute_energy_GSP(
-    confs: torch.Tensor, a_matrix, weights, batch_size, device, ext_search=True, tol=4
-) -> torch.Tensor:
-
-    """Computes the objective clique weight of the given amplitudes for the CIM device
-    as well as the clique locations using a greedy search protocol (GSP) from the largest
-    to smallest amplitudes of graph nodes until a node does not create a clique with the
-    rest of the larger node amplitudes
-    The method can also perform an extended search where it will search after reaching
-    the first node that does not create clique. The nodes after this node will be tested
-    to see if they create clique with the rest of the nodes. The extended search will
-    continue until the tolerance value for the difference between the new amplitude and
-    the last clique node amplitude has reached or the node after the first clique
-    failure is greater than size/25.
-
-        Arguments:
-            confs (Tensor): Amplitudes of the CIM in torch.Tensor format
-
-            a_matrix (array): The adjacenc matrix of the problem having element values
-            of 1 when there is an edge between the corresponding nodes and 0 otherwise
-
-            weights (array): 1D array of the weights of the nodes of the graph
-
-            batch_size (int): The batch size i.e. number of experiments for a given
-            instance
-
-            device (str): The device for only putting the output result on. It can be
-             "cpu" or "cuda"
-
-            ext_search(boolean, optional): Perform extended search. Defaul value is
-            False. It will slow down the computation if used.
-
-            tol (float, optional): The tolerance value for the extended search option.
-            Default value is 4.
-        Returns:
-            obj_clique (Tensor): The tensor of the weights of the max-cliques for each
-            batch.
-
-            cliques_loc (list of list): The location of the nodes for the found max-
-            clique in a given batch. Node numbers start from 1.
-    """
-
-    confs_pow = confs.pow(2)
-    confs_sorted_tensor, confs_indices_tensor = torch.sort(-confs_pow, 1)
-    confs_indices = np.array(confs_indices_tensor.cpu())
-    confs_sorted = -np.array(confs_sorted_tensor.cpu())
-    confs_sorted[np.isnan(confs_sorted)] = 0
-    confs_sorted[np.isinf(confs_sorted)] = 0
-    size = len(a_matrix)
-
-    obj_clique = weights[confs_indices[:, 0]]
-    new_element_clique = np.zeros([batch_size])
-    cliques_loc = []
-    for batch in range(batch_size):
-        cliques = [confs_indices[batch, 0]]
-        ii = 1
-        jumps = 0
-        conf_last = confs_sorted[batch, 0]
-        is_still_clique = True
-        while is_still_clique and (ii + jumps < size):
-            jj = ii + jumps
-            new_element_clique[batch] = np.prod(
-                a_matrix[confs_indices[batch, jj], cliques[0:ii]]
-            )
-            if new_element_clique[batch] == 0:
-                jumps += 1
-                if (
-                    (jj + 1 >= len(confs_sorted[batch, :]))
-                    or (conf_last - confs_sorted[batch, jj + 1]) > tol
-                    or jumps > size / 2
-                    or ext_search == False
-                ):
-                    is_still_clique = False
-            else:
-                ii += 1
-                cliques = np.append(cliques, confs_indices[batch, jj])
-                obj_clique[batch] += weights[confs_indices[batch, jj]]
-                conf_last = confs_sorted[batch, jj]
-
-        cliques_loc += [cliques]
-
-    return torch.Tensor(obj_clique).to(device), cliques_loc
-
-
-# Instead of generetaing wiener oise term at every iteration
+# Instead of generating Wiener noise term at every iteration
 # we randomly select one of the generated ones to save time
 #
 def get_w(iter_i, iter_n, w1, w2):
@@ -205,11 +121,14 @@ def sde_MF_CIM_weighted_vanilla(
 
         term1 = (-(1 + j) + p - g ** 2 * mu.pow(2)) * mu
 
-        term2 = -torch.einsum("cj,ij->ci", mu_tilde.pow(2), b_matrix) * mu_tilde
-        term2_cst = 0.08 * j / np.sqrt(float(torch.sum(torch.abs(b_matrix))) / dim)
-        # term2 *= term2_cst
-        # print(term2_cst)
-        term2 *= 0.0008
+        if False:
+            term2 = -torch.einsum("cj,ij->ci", mu_tilde.pow(2), b_matrix) * mu_tilde
+            term2_cst = 0.08 * j / np.sqrt(float(torch.sum(torch.abs(b_matrix))) / dim)
+            # term2 *= term2_cst
+            # print(term2_cst)
+            term2 *= 0.0008
+        else:
+            term2 = 0.00 #Farhad said in Slack message to set term2 to zero
 
         term3 = np.sqrt(j) * (sigma - 0.5) * Wt
 
